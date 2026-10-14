@@ -27,10 +27,13 @@
 //    deeper than that so the knob can sit down on the valve.
 // 4. Set part back to "knob", turn section_view off, and export the STL.
 //
-// Print the part with the socket mouth on the bed (the flat bottom down).
-// The stem hole is then vertical, which prints rounder. Four perimeters
-// so the set screw has plastic to thread into. The set-screw hole is a
-// teardrop so it prints without support; an M3 screw cuts its own thread.
+// The screw in the photos threads into the hole in the end of the stem.
+// The knob only needs a clearance hole: the screw passes through the top,
+// on the stem center, and the head pulls the knob down. The flats stop it
+// from spinning. Default is M4 (4.6 mm hole, 8.5 mm head recess).
+//
+// Print with the socket mouth on the bed (flat bottom down). Both the stem
+// socket and the screw hole are then vertical, which prints rounder.
 // Leave show_stem on while looking: the brass stem is preview only and
 // is left out of the STL.
 
@@ -51,7 +54,7 @@ axis_clearance = 0.4; // [0:0.05:1.5]
 socket_depth = 8; // [3:0.5:25]
 
 // Which way the flats point.
-// side: flats face the long sides, and the set screw clamps a flat.
+// side: flats face the long sides of the knob.
 // end: flats face the rounded ends of the knob.
 flats_face = "side"; // [side, end]
 
@@ -73,22 +76,23 @@ dome_enabled = true;
 dome_diameter = 14; // [6:0.5:40]
 dome_height = 3; // [0.4:0.1:10]
 
-/* [Set screw] */
-// A screw from the side, aimed at a flat, so it locks the knob on the stem.
-set_screw_enabled = true;
+/* [Stem screw] */
+// Clearance hole through the top, on the stem center. The screw threads
+// into the stem, not into the plastic.
+stem_screw_enabled = true;
 
-// Hole diameter, mm. 2.6 lets an M3 screw cut a thread in the plastic.
-// Use 3.4 for an M4 screw. Use 3.3 or 4.3 for a clearance hole instead.
-set_screw_diameter = 2.6; // [1.5:0.1:8]
+// Hole diameter, mm. 4.6 lets an M4 screw pass (printed holes come out small).
+// Use 3.5 if the screw turns out to be M3.
+stem_screw_diameter = 4.6; // [2:0.1:8]
 
-// Counterbore for the screw head. Set the diameter to 0 for a straight hole.
-// M3 pan head is about 5.5 mm. M4 pan head is about 7 mm.
-set_screw_head_diameter = 6; // [0:0.1:14]
-set_screw_head_depth = 1.6; // [0:0.1:8]
+// Recess the pan head sits in. M4 pan head is about 8 mm across.
+// Use 6 mm for an M3 pan head. Set to 0 for a straight hole.
+stem_screw_head_diameter = 8.5; // [0:0.1:16]
 
-// Height of the screw center above the bottom face, mm.
-// Keep this on the part of the stem that actually sits in the pocket.
-set_screw_height = 4.5; // [1:0.1:24]
+// How deep the head recess is, from the top of the dome.
+// 3.8 mm goes through the 3 mm dome, so the head bears on the solid knob
+// and sits below the dome. An M4 pan head is about 2.6 mm tall.
+stem_screw_head_depth = 3.8; // [0:0.1:12]
 
 /* [Part] */
 // gauge: small test socket. Print this before the knob.
@@ -139,18 +143,31 @@ if (part == "knob") {
     }
 }
 
-if (set_screw_enabled) {
-    assert(set_screw_diameter > 0.8, "Set screw hole is too small.");
-    screw_top = set_screw_height + (set_screw_diameter / 2) * sqrt(2);
-    screw_bottom = set_screw_height - set_screw_diameter / 2;
-    part_top = part == "gauge" ? socket_depth + 3 : knob_height;
-    assert(screw_bottom > 0.8, "Set screw hole breaks through the bottom. Raise set_screw_height.");
-    assert(screw_top < part_top - 0.6, "Set screw hole breaks through the top. Lower set_screw_height.");
-    if (set_screw_head_diameter > 0 && set_screw_head_depth > 0) {
-        head_top = set_screw_height + set_screw_head_diameter / 2;
-        head_bottom = set_screw_height - set_screw_head_diameter / 2;
-        assert(head_bottom > 0.4, "Screw head counterbore breaks through the bottom.");
-        assert(head_top < part_top - 0.4, "Screw head counterbore breaks through the top.");
+if (stem_screw_enabled) {
+    assert(stem_screw_diameter >= 2, "Screw hole is too small for a machine screw.");
+    assert(
+        stem_screw_diameter < hole_width - 0.2,
+        "Screw hole is wider than the stem. It would miss the thread in the end of the stem."
+    );
+    if (stem_screw_head_diameter > 0 && stem_screw_head_depth > 0) {
+        assert(
+            stem_screw_head_diameter > stem_screw_diameter,
+            "Head recess must be wider than the screw hole."
+        );
+    }
+    if (part == "knob") {
+        top_z = knob_height + (dome_enabled ? dome_height : 0);
+        shoulder = top_z - stem_screw_head_depth - socket_depth;
+        assert(
+            shoulder >= 1.5,
+            "Head recess eats through the plastic above the socket. Reduce stem_screw_head_depth or increase knob_height."
+        );
+        if (stem_screw_head_diameter > 0) {
+            assert(
+                stem_screw_head_diameter < knob_width - 2,
+                "Screw head recess is wider than the knob."
+            );
+        }
     }
 }
 
@@ -159,6 +176,7 @@ echo(str("Stem diameter across rounds: ", axis_diameter, " mm"));
 echo(str("Printed socket width: ", hole_width, " mm"));
 echo(str("Printed socket diameter: ", hole_diameter, " mm"));
 echo(str("Part: ", part));
+echo(str("Screw clearance hole: ", stem_screw_enabled ? stem_screw_diameter : 0, " mm"));
 
 // ---------------------------------------------------------------------------
 // Stem profile: a circle trimmed by two parallel flats.
@@ -193,41 +211,14 @@ module socket_void(depth) {
         oriented_profile(hole_diameter + lead_extra, hole_width + lead_extra);
 }
 
-// Horizontal hole along +X with the point of the teardrop facing up,
-// so a printer does not have to bridge the top of a round hole.
-module horizontal_teardrop_x(diameter, x_start, x_end) {
-    length = x_end - x_start;
-    radius = diameter / 2;
-    apex = radius * sqrt(2);
-    translate([x_start, 0, 0])
-        hull() {
-            rotate([0, 90, 0])
-                cylinder(d = diameter, h = length);
-            translate([0, 0, apex])
-                rotate([0, 90, 0])
-                    cylinder(d = 0.08, h = length, $fn = 6);
-        }
-}
-
-// Screw enters from the flat it clamps. The hole stops inside the socket
-// so it does not come out the far side of the knob.
-module set_screw_cut(reach) {
-    along_length = flats_face == "end";
-    rotate([0, 0, along_length ? 0 : 90]) {
-        translate([0, 0, set_screw_height])
-            horizontal_teardrop_x(
-                set_screw_diameter,
-                -1,
-                reach + 0.2
-            );
-        if (set_screw_head_diameter > set_screw_diameter && set_screw_head_depth > 0) {
-            translate([reach - set_screw_head_depth, 0, set_screw_height])
-                rotate([0, 90, 0])
-                    cylinder(
-                        d = set_screw_head_diameter,
-                        h = set_screw_head_depth + 0.4
-                    );
-        }
+// Vertical clearance hole on the stem axis, plus a recess for the pan head.
+// top_z is the top of the part the screw enters.
+module stem_screw_cut(top_z) {
+    translate([0, 0, socket_depth - 0.4])
+        cylinder(d = stem_screw_diameter, h = top_z - socket_depth + 2);
+    if (stem_screw_head_diameter > stem_screw_diameter && stem_screw_head_depth > 0) {
+        translate([0, 0, top_z - stem_screw_head_depth])
+            cylinder(d = stem_screw_head_diameter, h = stem_screw_head_depth + 0.4);
     }
 }
 
@@ -273,7 +264,7 @@ module section_cutter() {
 }
 
 module knob() {
-    reach = flats_face == "end" ? knob_length / 2 : knob_width / 2;
+    top_z = knob_height + (dome_enabled ? dome_height : 0);
     difference() {
         union() {
             knob_body();
@@ -282,8 +273,8 @@ module knob() {
             }
         }
         socket_void(socket_depth);
-        if (set_screw_enabled) {
-            set_screw_cut(reach);
+        if (stem_screw_enabled) {
+            stem_screw_cut(top_z);
         }
         if (section_view) {
             section_cutter();
@@ -294,20 +285,22 @@ module knob() {
 // Short socket with the same stem hole as the knob, for a fit test.
 module fit_gauge() {
     outer = max(hole_diameter, hole_width) + 10;
-    height = socket_depth + 3;
+    // Roof must survive the head recess and still leave plastic to print.
+    roof = stem_screw_enabled ? stem_screw_head_depth + 2.5 : 3;
+    height = socket_depth + roof;
     mark_angle = flats_face == "end" ? 0 : 90;
 
     difference() {
         union() {
             cylinder(d = outer, h = height);
-            // Bar on top, pointing toward the side the screw enters.
+            // Tick on the rim, lined up with one flat.
             rotate([0, 0, mark_angle])
-                translate([outer / 5, 0, height])
-                    cube([outer / 4, 1.8, 1.4], center = true);
+                translate([outer / 2 - 1.6, 0, height])
+                    cube([2.4, 1.6, 1.2], center = true);
         }
         socket_void(socket_depth);
-        if (set_screw_enabled) {
-            set_screw_cut(outer / 2);
+        if (stem_screw_enabled) {
+            stem_screw_cut(height);
         }
         if (section_view) {
             section_cutter();
